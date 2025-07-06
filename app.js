@@ -1,18 +1,21 @@
 const express = require('express');
-const cors = require('cors');
 const morgan = require('morgan');
+
+const corsMiddleware = require('./middleware/cors');
+const securityHeaders = require('./middleware/helmet');
+const rateLimiter = require('./middleware/rateLimit');
+const sanitizeInput = require('./middleware/sanitization');
 
 const app = express();
 
-const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080'],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
+app.use(corsMiddleware);
+app.use(securityHeaders);
+app.use(rateLimiter);
 
-app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use(sanitizeInput);
 
 app.use(morgan('dev'));
 
