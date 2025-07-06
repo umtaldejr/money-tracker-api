@@ -1,6 +1,5 @@
 const express = require('express');
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -31,10 +30,6 @@ app.use((err, req, res) => {
     error: 'Something went wrong!',
     message: err.message
   });
-});
-
-app.listen(PORT, () => {
-    console.log(`🚀 Money Tracker API is running on port ${PORT}`);
 });
 
 module.exports = app;
