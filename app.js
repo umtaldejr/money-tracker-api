@@ -7,6 +7,8 @@ const rateLimiter = require('./middleware/rateLimit');
 const sanitizeInput = require('./middleware/sanitization');
 const notFoundHandler = require('./middleware/notFound');
 const globalErrorHandler = require('./middleware/globalError');
+const InfoController = require('./controllers/infoController');
+const HealthController = require('./controllers/healthController');
 
 const app = express();
 
@@ -21,14 +23,10 @@ app.use(sanitizeInput);
 
 app.use(morgan('dev'));
 
-app.get('/', (req, res) => {
-  res.json({
-    message: 'Welcome to Money Tracker API',
-    version: require('../../package.json').version,
-    environment: process.env.NODE_ENV || 'development',
-    status: 'running'
-  });
-});
+app.get('/', InfoController.getApiInfo);
+app.get('/health', HealthController.getHealth);
+
+app.use('/api/v1', require('./routes/v1'));
 
 app.use('*', notFoundHandler);
 app.use(globalErrorHandler);
