@@ -357,7 +357,7 @@ jobs:
       url: https://api.yourdomain.com
     steps:
       - name: Trigger production deployment
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           event-type: deploy-production
