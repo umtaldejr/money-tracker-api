@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: development
+    container_name: money-tracker-api-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      # Bind mount for hot reload
+      - .:/usr/src/app
+      # Anonymous volume for node_modules to avoid overwriting
+      - /usr/src/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:8080
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - money-tracker-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Add a database service for future use
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: money-tracker-db
+  #   environment:
+  #     - POSTGRES_DB=money_tracker
+  #     - POSTGRES_USER=user
+  #     - POSTGRES_PASSWORD=password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - money-tracker-network
+  #   restart: unless-stopped
+
+  # Optional: Add Redis for caching
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: money-tracker-redis
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - money-tracker-network
+  #   restart: unless-stopped
+
+networks:
+  money-tracker-network:
+    driver: bridge
+
+# volumes:
+#   postgres_data: 
