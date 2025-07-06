@@ -5,6 +5,8 @@ const corsMiddleware = require('./middleware/cors');
 const securityHeaders = require('./middleware/helmet');
 const rateLimiter = require('./middleware/rateLimit');
 const sanitizeInput = require('./middleware/sanitization');
+const notFoundHandler = require('./middleware/notFound');
+const globalErrorHandler = require('./middleware/globalError');
 
 const app = express();
 
@@ -28,19 +30,7 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    message: `Cannot ${req.method} ${req.originalUrl}`
-  });
-});
-
-app.use((err, req, res) => {
-  console.error(err.stack);
-  res.status(500).json({
-    error: 'Something went wrong!',
-    message: err.message
-  });
-});
+app.use('*', notFoundHandler);
+app.use(globalErrorHandler);
 
 module.exports = app;
