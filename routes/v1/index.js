@@ -4,6 +4,7 @@ const router = express.Router();
 
 router.get('/', InfoController.getV1ApiInfo);
 
+router.use('/auth', require('./auth'));
 router.use('/users', require('./users'));
 
 module.exports = router;
