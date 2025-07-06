@@ -109,7 +109,7 @@ jobs:
         run: npm test
 
       - name: Create security update PR
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'security: fix vulnerabilities in dependencies'
@@ -185,7 +185,7 @@ jobs:
           fi
 
       - name: Create minor update PR
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'deps: update minor and patch versions'
@@ -259,7 +259,7 @@ jobs:
           fi
 
       - name: Create major update issue
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'deps: check major updates'
