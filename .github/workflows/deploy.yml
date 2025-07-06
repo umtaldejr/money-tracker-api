@@ -55,7 +55,7 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
         
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only --wait-timeout 300 --verbose
+        run: flyctl deploy --remote-only --wait-timeout 300 --verbose --build-arg COMMIT_HASH=${{ github.sha }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           
@@ -63,6 +63,7 @@ jobs:
         run: |
           echo "Deployment completed successfully!"
           echo "App URL: https://money-tracker-api-342btw.fly.dev"
+          echo "Deployed commit: ${{ github.sha }}"
           flyctl status --app money-tracker-api-342btw
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

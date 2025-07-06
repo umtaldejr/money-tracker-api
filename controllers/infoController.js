@@ -1,11 +1,9 @@
-const packageJson = require('../package.json');
-
 class InfoController {
   static getBaseResponse(additionalProps = {}) {
     return {
       message: 'Welcome to Money Tracker API',
-      version: packageJson.version,
       environment: process.env.NODE_ENV || 'development',
+      version: process.env.COMMIT_HASH,
       ...additionalProps
     };
   }
