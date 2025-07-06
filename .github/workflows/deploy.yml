@@ -1,0 +1,335 @@
+name: Deploy to Environments
+
+on:
+  repository_dispatch:
+    types: [deploy-staging, deploy-production]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      version:
+        description: 'Version/tag to deploy (leave empty for latest)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Deploy to staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.event.action == 'deploy-staging' || (github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging-api.yourdomain.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set deployment version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.client_payload.sha }}" != "" ]; then
+            echo "version=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_PORT || 22 }}
+          script: |
+            # Create deployment directory
+            mkdir -p /opt/money-tracker-api
+            cd /opt/money-tracker-api
+            
+            # Download docker-compose files
+            curl -o docker-compose.prod.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.prod.yml
+            curl -o nginx.conf https://raw.githubusercontent.com/${{ github.repository }}/main/nginx.conf
+            
+            # Set environment variables
+            export IMAGE_TAG=${{ steps.version.outputs.version }}
+            export ENVIRONMENT=staging
+            
+            # Update environment file
+            cat > .env.production << EOF
+            NODE_ENV=production
+            PORT=3000
+            ALLOWED_ORIGINS=${{ secrets.STAGING_ALLOWED_ORIGINS }}
+            DB_HOST=postgres
+            DB_PORT=5432
+            DB_NAME=${{ secrets.STAGING_DB_NAME }}
+            DB_USER=${{ secrets.STAGING_DB_USER }}
+            DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}
+            REDIS_HOST=redis
+            REDIS_PORT=6379
+            REDIS_PASSWORD=${{ secrets.STAGING_REDIS_PASSWORD }}
+            JWT_SECRET=${{ secrets.STAGING_JWT_SECRET }}
+            EOF
+            
+            # Login to registry
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull new image
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            
+            # Update image in compose file
+            sed -i "s|ghcr.io/${{ github.repository }}:.*|${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}|g" docker-compose.prod.yml
+            
+            # Deploy with zero downtime
+            docker-compose -f docker-compose.prod.yml up -d --force-recreate
+            
+            # Wait for health check
+            sleep 30
+            
+            # Verify deployment
+            if ! curl -f http://localhost/health; then
+              echo "Deployment failed - rolling back"
+              docker-compose -f docker-compose.prod.yml down
+              exit 1
+            fi
+            
+            echo "✅ Staging deployment successful!"
+
+      - name: Run smoke tests
+        run: |
+          # Wait for deployment to be ready
+          sleep 60
+          
+          # Basic health check
+          curl -f https://staging-api.yourdomain.com/health
+          
+          # API endpoint test
+          curl -f https://staging-api.yourdomain.com/api/v1
+          
+          echo "✅ Smoke tests passed!"
+
+      - name: Notify deployment success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🚀 Staging deployment successful! Version: ${{ steps.version.outputs.version }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "❌ Staging deployment failed! Version: ${{ steps.version.outputs.version }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Deploy to production (requires manual approval)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.event.action == 'deploy-production' || (github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://api.yourdomain.com
+    needs: []
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set deployment version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Pre-deployment checks
+        run: |
+          echo "🔍 Running pre-deployment checks..."
+          
+          # Check if image exists
+          docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          
+          # Validate version format (for tagged releases)
+          if [[ "${{ steps.version.outputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "✅ Valid semver tag: ${{ steps.version.outputs.version }}"
+          elif [ "${{ steps.version.outputs.version }}" == "latest" ]; then
+            echo "⚠️  Deploying latest version"
+          else
+            echo "❌ Invalid version format: ${{ steps.version.outputs.version }}"
+            exit 1
+          fi
+
+      - name: Create backup
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_PORT || 22 }}
+          script: |
+            # Create backup of current deployment
+            cd /opt/money-tracker-api
+            
+            # Backup database
+            docker exec money-tracker-db-prod pg_dump -U ${{ secrets.PRODUCTION_DB_USER }} ${{ secrets.PRODUCTION_DB_NAME }} > backup-$(date +%Y%m%d-%H%M%S).sql
+            
+            # Backup current configuration
+            tar -czf backup-config-$(date +%Y%m%d-%H%M%S).tar.gz docker-compose.prod.yml nginx.conf .env.production
+            
+            echo "✅ Backup created successfully"
+
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_PORT || 22 }}
+          script: |
+            cd /opt/money-tracker-api
+            
+            # Download latest deployment files
+            curl -o docker-compose.prod.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.prod.yml
+            curl -o nginx.conf https://raw.githubusercontent.com/${{ github.repository }}/main/nginx.conf
+            
+            # Update environment file
+            cat > .env.production << EOF
+            NODE_ENV=production
+            PORT=3000
+            ALLOWED_ORIGINS=${{ secrets.PRODUCTION_ALLOWED_ORIGINS }}
+            DB_HOST=postgres
+            DB_PORT=5432
+            DB_NAME=${{ secrets.PRODUCTION_DB_NAME }}
+            DB_USER=${{ secrets.PRODUCTION_DB_USER }}
+            DB_PASSWORD=${{ secrets.PRODUCTION_DB_PASSWORD }}
+            REDIS_HOST=redis
+            REDIS_PORT=6379
+            REDIS_PASSWORD=${{ secrets.PRODUCTION_REDIS_PASSWORD }}
+            JWT_SECRET=${{ secrets.PRODUCTION_JWT_SECRET }}
+            EOF
+            
+            # Login to registry
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull new image
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            
+            # Update image in compose file
+            sed -i "s|ghcr.io/${{ github.repository }}:.*|${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}|g" docker-compose.prod.yml
+            
+            # Rolling deployment with health checks
+            docker-compose -f docker-compose.prod.yml up -d --force-recreate --no-deps app
+            
+            # Wait for health check
+            sleep 45
+            
+            # Verify deployment
+            for i in {1..10}; do
+              if curl -f http://localhost/health; then
+                echo "✅ Health check passed"
+                break
+              else
+                echo "⏳ Waiting for health check... ($i/10)"
+                sleep 10
+              fi
+              
+              if [ $i -eq 10 ]; then
+                echo "❌ Health check failed - deployment unsuccessful"
+                exit 1
+              fi
+            done
+            
+            # Update other services if needed
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            echo "✅ Production deployment successful!"
+
+      - name: Run production smoke tests
+        run: |
+          # Wait for full deployment
+          sleep 60
+          
+          # Comprehensive health checks
+          curl -f https://api.yourdomain.com/health
+          curl -f https://api.yourdomain.com/api/v1
+          
+          # Performance test
+          curl -w "@curl-format.txt" -o /dev/null -s https://api.yourdomain.com/health
+          
+          echo "✅ Production smoke tests passed!"
+
+      - name: Update monitoring dashboards
+        run: |
+          # Trigger monitoring dashboard updates
+          curl -X POST "${{ secrets.MONITORING_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "deployment": {
+                "environment": "production",
+                "version": "${{ steps.version.outputs.version }}",
+                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+                "status": "success"
+              }
+            }'
+
+      - name: Notify production deployment success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🚀 Production deployment successful! Version: ${{ steps.version.outputs.version }} | URL: https://api.yourdomain.com"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Rollback on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_PORT || 22 }}
+          script: |
+            cd /opt/money-tracker-api
+            
+            echo "🔄 Rolling back deployment..."
+            
+            # Get the previous successful image
+            PREVIOUS_IMAGE=$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep ghcr.io/${{ github.repository }} | head -2 | tail -1)
+            
+            if [ ! -z "$PREVIOUS_IMAGE" ]; then
+              # Update compose file with previous image
+              sed -i "s|ghcr.io/${{ github.repository }}:.*|$PREVIOUS_IMAGE|g" docker-compose.prod.yml
+              
+              # Deploy previous version
+              docker-compose -f docker-compose.prod.yml up -d --force-recreate
+              
+              echo "✅ Rollback completed to: $PREVIOUS_IMAGE"
+            else
+              echo "❌ No previous image found for rollback"
+            fi
+
+      - name: Notify production deployment failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "❌ Production deployment failed and rolled back! Version: ${{ steps.version.outputs.version }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

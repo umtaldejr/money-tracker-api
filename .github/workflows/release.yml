@@ -1,0 +1,462 @@
+name: Release Management
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Type of release'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prerelease
+      prerelease_id:
+        description: 'Prerelease identifier (e.g., alpha, beta, rc)'
+        required: false
+        type: string
+        default: 'alpha'
+
+jobs:
+  # Analyze commits for semantic versioning
+  analyze-commits:
+    name: Analyze Commits
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.analyze.outputs.should-release }}
+      release-type: ${{ steps.analyze.outputs.release-type }}
+      next-version: ${{ steps.analyze.outputs.next-version }}
+      changelog: ${{ steps.analyze.outputs.changelog }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install semantic-release
+        run: |
+          npm install -g semantic-release
+          npm install -g @semantic-release/changelog
+          npm install -g @semantic-release/git
+          npm install -g @semantic-release/github
+          npm install -g @semantic-release/npm
+
+      - name: Analyze commits
+        id: analyze
+        run: |
+          # Get the latest tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+          
+          # Get commits since last tag
+          COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s" --no-merges)
+          echo "Commits since last tag:"
+          echo "$COMMITS"
+          
+          # Analyze commit messages for semantic versioning
+          MAJOR_CHANGES=$(echo "$COMMITS" | grep -E "^(feat|fix|docs|style|refactor|perf|test|chore)(\(.+\))?\!:" | wc -l)
+          MINOR_CHANGES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | wc -l)
+          PATCH_CHANGES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | wc -l)
+          
+          echo "Major changes: $MAJOR_CHANGES"
+          echo "Minor changes: $MINOR_CHANGES"
+          echo "Patch changes: $PATCH_CHANGES"
+          
+          # Determine release type
+          if [ $MAJOR_CHANGES -gt 0 ]; then
+            RELEASE_TYPE="major"
+          elif [ $MINOR_CHANGES -gt 0 ]; then
+            RELEASE_TYPE="minor"
+          elif [ $PATCH_CHANGES -gt 0 ]; then
+            RELEASE_TYPE="patch"
+          else
+            RELEASE_TYPE="none"
+          fi
+          
+          # Override with manual input if provided
+          if [ "${{ github.event.inputs.release_type }}" != "" ]; then
+            RELEASE_TYPE="${{ github.event.inputs.release_type }}"
+          fi
+          
+          echo "Release type: $RELEASE_TYPE"
+          
+          # Calculate next version
+          if [ "$RELEASE_TYPE" != "none" ]; then
+            # Remove 'v' prefix if present
+            VERSION_NUM=$(echo $LATEST_TAG | sed 's/^v//')
+            
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NUM"
+            
+            case $RELEASE_TYPE in
+              major)
+                NEXT_VERSION="v$((MAJOR+1)).0.0"
+                ;;
+              minor)
+                NEXT_VERSION="v$MAJOR.$((MINOR+1)).0"
+                ;;
+              patch)
+                NEXT_VERSION="v$MAJOR.$MINOR.$((PATCH+1))"
+                ;;
+              prerelease)
+                NEXT_VERSION="v$MAJOR.$MINOR.$((PATCH+1))-${{ github.event.inputs.prerelease_id }}.1"
+                ;;
+            esac
+            
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "Next version: $NEXT_VERSION"
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "No release needed"
+            NEXT_VERSION=$LATEST_TAG
+          fi
+          
+          echo "release-type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          echo "next-version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Generate changelog
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "## $NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Features" >> $GITHUB_OUTPUT
+          echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^feat/- feat/' || echo "" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Bug Fixes" >> $GITHUB_OUTPUT
+          echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^fix/- fix/' || echo "" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Documentation" >> $GITHUB_OUTPUT
+          echo "$COMMITS" | grep -E "^docs(\(.+\))?:" | sed 's/^docs/- docs/' || echo "" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Other Changes" >> $GITHUB_OUTPUT
+          echo "$COMMITS" | grep -vE "^(feat|fix|docs)(\(.+\))?:" | sed 's/^/- /' || echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  # Create release
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: analyze-commits
+    if: needs.analyze-commits.outputs.should-release == 'true'
+    outputs:
+      release-id: ${{ steps.create-release.outputs.release-id }}
+      upload-url: ${{ steps.create-release.outputs.upload-url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Update version in package.json
+        run: |
+          VERSION=${{ needs.analyze-commits.outputs.next-version }}
+          VERSION_NUM=$(echo $VERSION | sed 's/^v//')
+          npm version $VERSION_NUM --no-git-tag-version
+
+      - name: Update CHANGELOG.md
+        run: |
+          # Create or update CHANGELOG.md
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+          
+          # Add new version to changelog
+          NEW_CHANGELOG=$(cat << 'EOF'
+          # Changelog
+          
+          All notable changes to this project will be documented in this file.
+          
+          ${{ needs.analyze-commits.outputs.changelog }}
+          
+          EOF
+          )
+          
+          # Append existing changelog (skip first 4 lines)
+          tail -n +5 CHANGELOG.md >> temp_changelog.md
+          echo "$NEW_CHANGELOG" > CHANGELOG.md
+          cat temp_changelog.md >> CHANGELOG.md
+          rm temp_changelog.md
+
+      - name: Commit version bump
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "chore: release ${{ needs.analyze-commits.outputs.next-version }}"
+          git tag ${{ needs.analyze-commits.outputs.next-version }}
+          git push origin main
+          git push origin ${{ needs.analyze-commits.outputs.next-version }}
+
+      - name: Create GitHub Release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.analyze-commits.outputs.next-version }}
+          release_name: Release ${{ needs.analyze-commits.outputs.next-version }}
+          body: |
+            ${{ needs.analyze-commits.outputs.changelog }}
+            
+            ## Docker Images
+            
+            - `ghcr.io/${{ github.repository }}:${{ needs.analyze-commits.outputs.next-version }}`
+            - `ghcr.io/${{ github.repository }}:latest`
+            
+            ## Installation
+            
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ needs.analyze-commits.outputs.next-version }}
+            ```
+            
+            ## What's Changed
+            
+            See the full changelog above for detailed changes.
+          draft: false
+          prerelease: ${{ contains(needs.analyze-commits.outputs.next-version, '-') }}
+
+  # Build and push Docker images with release tag
+  build-release-images:
+    name: Build Release Images
+    runs-on: ubuntu-latest
+    needs: [analyze-commits, create-release]
+    if: needs.analyze-commits.outputs.should-release == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze-commits.outputs.next-version }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.analyze-commits.outputs.next-version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.analyze-commits.outputs.next-version }}
+            type=semver,pattern={{major}},value=${{ needs.analyze-commits.outputs.next-version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Publish to npm (if applicable)
+  publish-npm:
+    name: Publish to NPM
+    runs-on: ubuntu-latest
+    needs: [analyze-commits, create-release]
+    if: needs.analyze-commits.outputs.should-release == 'true' && !contains(needs.analyze-commits.outputs.next-version, '-')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze-commits.outputs.next-version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Update documentation
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [analyze-commits, create-release]
+    if: needs.analyze-commits.outputs.should-release == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze-commits.outputs.next-version }}
+
+      - name: Update README badges
+        run: |
+          # Update version badge in README
+          sed -i "s/version-v.*-blue/version-${{ needs.analyze-commits.outputs.next-version }}-blue/g" README.md
+
+      - name: Generate API documentation
+        run: |
+          # Generate API docs if needed
+          if [ -f "package.json" ] && grep -q "swagger" package.json; then
+            npm run docs:generate || echo "No docs generation script found"
+          fi
+
+      - name: Commit documentation updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md docs/ || true
+          git commit -m "docs: update documentation for ${{ needs.analyze-commits.outputs.next-version }}" || echo "No documentation changes"
+          git push origin main || echo "No changes to push"
+
+  # Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [analyze-commits, create-release, build-release-images]
+    if: needs.analyze-commits.outputs.should-release == 'true' && !contains(needs.analyze-commits.outputs.next-version, '-')
+    environment:
+      name: production
+      url: https://api.yourdomain.com
+    steps:
+      - name: Trigger production deployment
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy-production
+          client-payload: '{"version": "${{ needs.analyze-commits.outputs.next-version }}"}'
+
+  # Post-release notifications
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [analyze-commits, create-release, build-release-images]
+    if: needs.analyze-commits.outputs.should-release == 'true'
+    steps:
+      - name: Notify team
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: |
+            🚀 **New Release Available!**
+            
+            **Version:** ${{ needs.analyze-commits.outputs.next-version }}
+            **Type:** ${{ needs.analyze-commits.outputs.release-type }}
+            
+            **Docker Images:**
+            - `ghcr.io/${{ github.repository }}:${{ needs.analyze-commits.outputs.next-version }}`
+            - `ghcr.io/${{ github.repository }}:latest`
+            
+            **GitHub Release:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.analyze-commits.outputs.next-version }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Update project management
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Close issues marked as "resolved" with this release
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'resolved'
+            });
+            
+            for (const issue of issues.data) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `🎉 This issue has been resolved in release ${{ needs.analyze-commits.outputs.next-version }}!`
+              });
+              
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed'
+              });
+            }
+
+  # Rollback preparation
+  prepare-rollback:
+    name: Prepare Rollback
+    runs-on: ubuntu-latest
+    needs: [analyze-commits, create-release]
+    if: needs.analyze-commits.outputs.should-release == 'true'
+    steps:
+      - name: Create rollback instructions
+        run: |
+          cat > rollback-${{ needs.analyze-commits.outputs.next-version }}.md << EOF
+          # Rollback Instructions for ${{ needs.analyze-commits.outputs.next-version }}
+          
+          ## Quick Rollback
+          
+          \`\`\`bash
+          # Rollback Docker deployment
+          docker pull ghcr.io/${{ github.repository }}:previous-version
+          docker-compose up -d
+          
+          # Rollback database (if applicable)
+          # Run database rollback scripts
+          \`\`\`
+          
+          ## Manual Rollback Steps
+          
+          1. Identify the previous stable version
+          2. Update deployment configurations
+          3. Rollback database changes if needed
+          4. Verify application functionality
+          5. Monitor for issues
+          
+          ## Contacts
+          
+          - Team Lead: [Add contact info]
+          - DevOps: [Add contact info]
+          - On-call: [Add contact info]
+          
+          EOF
+
+      - name: Upload rollback instructions
+        uses: actions/upload-artifact@v3
+        with:
+          name: rollback-instructions
+          path: rollback-${{ needs.analyze-commits.outputs.next-version }}.md

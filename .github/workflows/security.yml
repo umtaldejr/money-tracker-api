@@ -1,0 +1,360 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  # Dependency vulnerability scanning
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level high --json > audit-results.json || true
+          
+          # Check for high/critical vulnerabilities
+          if [ $(jq '.metadata.vulnerabilities.high + .metadata.vulnerabilities.critical' audit-results.json) -gt 0 ]; then
+            echo "::error::High or critical vulnerabilities found!"
+            npm audit --audit-level high
+            exit 1
+          fi
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: audit-results
+          path: audit-results.json
+
+  # Code security analysis with CodeQL
+  codeql-analysis:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+          queries: security-extended,security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # SAST scanning with Semgrep
+  sast-scan:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/nodejs
+            p/express
+            p/jwt
+            p/sql-injection
+            p/xss
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+  # Secret scanning
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  # Container security scanning
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          load: true
+          tags: money-tracker-api:security-scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'money-tracker-api:security-scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-config.sarif'
+
+      - name: Upload Trivy config scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-config.sarif'
+
+  # License compliance check
+  license-scan:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install license checker
+        run: npm install -g license-checker
+
+      - name: Check licenses
+        run: |
+          license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense' --json > licenses.json
+          
+          # Check for prohibited licenses
+          if license-checker --excludePackages 'fsevents' --restrictive | grep -E '(GPL|LGPL|AGPL|CDDL|EPL|MPL|MS-PL|MS-RL|EUPL|OFL|CPOL|QPL|IPL)'; then
+            echo "::error::Prohibited licenses found!"
+            exit 1
+          fi
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v3
+        with:
+          name: license-report
+          path: licenses.json
+
+  # Infrastructure security scan
+  infrastructure-scan:
+    name: Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,docker_compose
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload Checkov scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+
+  # Security policy compliance
+  security-policy:
+    name: Security Policy Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check security.md exists
+        run: |
+          if [ ! -f SECURITY.md ]; then
+            echo "::warning::SECURITY.md file not found. Creating one..."
+            cat > SECURITY.md << EOF
+          # Security Policy
+          
+          ## Reporting Security Vulnerabilities
+          
+          If you discover a security vulnerability, please report it to [security@yourdomain.com](mailto:security@yourdomain.com).
+          
+          ## Supported Versions
+          
+          | Version | Supported          |
+          | ------- | ------------------ |
+          | 1.0.x   | :white_check_mark: |
+          
+          ## Security Measures
+          
+          - All dependencies are regularly updated
+          - Security scanning is performed on every commit
+          - Container images are scanned for vulnerabilities
+          - Code is analyzed using static analysis tools
+          EOF
+          fi
+
+      - name: Check for security best practices
+        run: |
+          echo "Checking security best practices..."
+          
+          # Check for security headers middleware
+          if ! grep -r "helmet" --include="*.js" .; then
+            echo "::warning::Security headers middleware (helmet) not found"
+          fi
+          
+          # Check for rate limiting
+          if ! grep -r "rate.*limit" --include="*.js" .; then
+            echo "::warning::Rate limiting middleware not found"
+          fi
+          
+          # Check for input validation
+          if ! grep -r "sanitize\|validate" --include="*.js" .; then
+            echo "::warning::Input validation/sanitization not found"
+          fi
+          
+          # Check for CORS configuration
+          if ! grep -r "cors" --include="*.js" .; then
+            echo "::warning::CORS configuration not found"
+          fi
+          
+          echo "✅ Security best practices check completed"
+
+  # Generate security report
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, codeql-analysis, sast-scan, secret-scan, container-scan, license-scan, infrastructure-scan, security-policy]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Generate security report
+        run: |
+          cat > security-report.md << EOF
+          # Security Scan Report
+          
+          **Date:** $(date -u +%Y-%m-%d)
+          **Repository:** ${{ github.repository }}
+          **Branch:** ${{ github.ref_name }}
+          **Commit:** ${{ github.sha }}
+          
+          ## Summary
+          
+          | Scan Type | Status |
+          |-----------|--------|
+          | Dependency Scan | ${{ needs.dependency-scan.result }} |
+          | CodeQL Analysis | ${{ needs.codeql-analysis.result }} |
+          | SAST Scan | ${{ needs.sast-scan.result }} |
+          | Secret Scan | ${{ needs.secret-scan.result }} |
+          | Container Scan | ${{ needs.container-scan.result }} |
+          | License Compliance | ${{ needs.license-scan.result }} |
+          | Infrastructure Scan | ${{ needs.infrastructure-scan.result }} |
+          | Security Policy | ${{ needs.security-policy.result }} |
+          
+          ## Recommendations
+          
+          - Keep dependencies updated regularly
+          - Review and address any findings in the GitHub Security tab
+          - Ensure all secrets are properly managed
+          - Follow security best practices for Node.js applications
+          
+          ## Next Steps
+          
+          - Review detailed findings in the GitHub Security tab
+          - Address any high-priority vulnerabilities
+          - Update security policies as needed
+          EOF
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: security-report.md
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🔒 Security Scan Results\n\n' + report
+            });
+
+  # Slack notification for security issues
+  notify-security:
+    name: Security Notification
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, codeql-analysis, sast-scan, secret-scan, container-scan]
+    if: failure() && github.ref == 'refs/heads/main'
+    steps:
+      - name: Notify security team
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "🚨 Security scan failed on main branch! Please review the GitHub Security tab."
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
