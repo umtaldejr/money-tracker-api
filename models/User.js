@@ -162,7 +162,8 @@ class User {
   }
 
   static deleteById(id) {
-    return memoryStore.deleteUser(id);
+    const deletedUser = memoryStore.deleteUser(id);
+    return deletedUser !== null;
   }
 
   static destroy() {

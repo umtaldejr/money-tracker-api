@@ -3,7 +3,7 @@ const checkUserOwnership = (req, res, next) => {
     const { id } = req.params;
     const userId = req.userId;
 
-    if (id !== userId) {
+    if (!id || !userId || id !== userId) {
       return res.status(403).json({ error: 'Access denied - you can only access your own data' });
     }
 

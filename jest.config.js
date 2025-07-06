@@ -8,7 +8,7 @@ module.exports = {
     '!eslint.config.js'
   ],
   testMatch: [
-    '**/__tests__/**/*.js',
+    '**/tests/**/*.js',
     '**/?(*.)+(spec|test).js'
   ],
   verbose: true,
