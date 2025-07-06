@@ -31,6 +31,10 @@ COPY . .
 # Final stage for app image
 FROM base
 
+# Copy commit hash from build stage
+ARG COMMIT_HASH
+ENV COMMIT_HASH=${COMMIT_HASH}
+
 # Copy built application
 COPY --from=build /app /app
 

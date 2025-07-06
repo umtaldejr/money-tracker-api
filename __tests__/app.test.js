@@ -3,16 +3,37 @@ const app = require('../app');
 
 describe('Money Tracker API', () => {
   describe('GET /', () => {
-    it('should return welcome message', async () => {
+    it('should return welcome message with undefined version when no commit hash', async () => {
       const response = await request(app)
         .get('/')
         .expect(200);
 
       expect(response.body).toEqual({
         message: 'Welcome to Money Tracker API',
-        version: '1.0.0',
+        version: undefined,
         environment: 'test'
       });
+    });
+
+    it('should return welcome message with version when commit hash is set', async () => {
+      const originalCommitHash = process.env.COMMIT_HASH;
+      process.env.COMMIT_HASH = 'test-commit-hash';
+
+      const response = await request(app)
+        .get('/')
+        .expect(200);
+
+      expect(response.body).toEqual({
+        message: 'Welcome to Money Tracker API',
+        version: 'test-commit-hash',
+        environment: 'test'
+      });
+
+      if (originalCommitHash) {
+        process.env.COMMIT_HASH = originalCommitHash;
+      } else {
+        delete process.env.COMMIT_HASH;
+      }
     });
 
     it('should return JSON content type', async () => {
@@ -39,21 +60,41 @@ describe('Money Tracker API', () => {
   });
 
   describe('GET /api/v1', () => {
-    it('should return v1 API info', async () => {
+    it('should return v1 API info with undefined version when no commit hash', async () => {
       const response = await request(app)
         .get('/api/v1')
         .expect(200);
 
       expect(response.body).toEqual({
         message: 'Welcome to Money Tracker API',
-        version: '1.0.0',
+        version: undefined,
         environment: 'test',
         apiVersion: 'v1'
       });
     });
+
+    it('should return v1 API info with version when commit hash is set', async () => {
+      const originalCommitHash = process.env.COMMIT_HASH;
+      process.env.COMMIT_HASH = 'test-commit-hash-v1';
+
+      const response = await request(app)
+        .get('/api/v1')
+        .expect(200);
+
+      expect(response.body).toEqual({
+        message: 'Welcome to Money Tracker API',
+        version: 'test-commit-hash-v1',
+        environment: 'test',
+        apiVersion: 'v1'
+      });
+
+      if (originalCommitHash) {
+        process.env.COMMIT_HASH = originalCommitHash;
+      } else {
+        delete process.env.COMMIT_HASH;
+      }
+    });
   });
-
-
 
   describe('404 Handler', () => {
     it('should return 404 for non-existent routes', async () => {
