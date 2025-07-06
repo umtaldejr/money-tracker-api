@@ -11,6 +11,7 @@ describe('Money Tracker API', () => {
       expect(response.body).toEqual({
         message: 'Welcome to Money Tracker API',
         version: '1.0.0',
+        environment: 'test',
         status: 'running'
       });
     });
