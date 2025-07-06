@@ -1,14 +1,14 @@
 const express = require('express');
 const morgan = require('morgan');
 
+const HealthController = require('./controllers/healthController');
+const InfoController = require('./controllers/infoController');
 const corsMiddleware = require('./middleware/cors');
+const globalErrorHandler = require('./middleware/globalError');
 const securityHeaders = require('./middleware/helmet');
+const notFoundHandler = require('./middleware/notFound');
 const rateLimiter = require('./middleware/rateLimit');
 const sanitizeInput = require('./middleware/sanitization');
-const notFoundHandler = require('./middleware/notFound');
-const globalErrorHandler = require('./middleware/globalError');
-const InfoController = require('./controllers/infoController');
-const HealthController = require('./controllers/healthController');
 
 const app = express();
 
