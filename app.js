@@ -12,7 +12,7 @@ app.use(morgan('dev'));
 app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to Money Tracker API',
-    version: '1.0.0',
+    version: require('../../package.json').version,
     status: 'running'
   });
 });
