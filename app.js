@@ -1,9 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+
 const app = express();
 
-app.use(cors());
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -13,6 +20,7 @@ app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to Money Tracker API',
     version: require('../../package.json').version,
+    environment: process.env.NODE_ENV || 'development',
     status: 'running'
   });
 });
