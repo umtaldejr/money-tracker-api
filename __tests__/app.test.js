@@ -11,8 +11,7 @@ describe('Money Tracker API', () => {
       expect(response.body).toEqual({
         message: 'Welcome to Money Tracker API',
         version: '1.0.0',
-        environment: 'test',
-        status: 'running'
+        environment: 'test'
       });
     });
 
@@ -24,6 +23,37 @@ describe('Money Tracker API', () => {
       expect(response.headers['content-type']).toMatch(/json/);
     });
   });
+
+  describe('GET /health', () => {
+    it('should return health status', async () => {
+      const response = await request(app)
+        .get('/health')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('status', 'healthy');
+      expect(response.body).toHaveProperty('timestamp');
+      expect(response.body).toHaveProperty('uptime');
+      expect(response.body).toHaveProperty('memory');
+      expect(response.body).not.toHaveProperty('version');
+    });
+  });
+
+  describe('GET /api/v1', () => {
+    it('should return v1 API info', async () => {
+      const response = await request(app)
+        .get('/api/v1')
+        .expect(200);
+
+      expect(response.body).toEqual({
+        message: 'Welcome to Money Tracker API',
+        version: '1.0.0',
+        environment: 'test',
+        apiVersion: 'v1'
+      });
+    });
+  });
+
+
 
   describe('404 Handler', () => {
     it('should return 404 for non-existent routes', async () => {
