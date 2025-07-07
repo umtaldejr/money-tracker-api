@@ -59,7 +59,7 @@ describe('globalErrorHandler middleware', () => {
 
       globalErrorHandler(error, req, res, next);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(undefined);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Unknown error occurred');
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
         error: 'Something went wrong!',
@@ -76,8 +76,7 @@ describe('globalErrorHandler middleware', () => {
       expect(consoleErrorSpy).toHaveBeenCalledWith(error.stack);
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Something went wrong!',
-        message: ''
+        error: 'Something went wrong!'
       });
     });
   });
@@ -165,11 +164,10 @@ describe('globalErrorHandler middleware', () => {
 
       globalErrorHandler(error, req, res, next);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(undefined);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Unknown error occurred');
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Something went wrong!',
-        message: undefined
+        error: 'Something went wrong!'
       });
     });
 
@@ -178,11 +176,10 @@ describe('globalErrorHandler middleware', () => {
 
       globalErrorHandler(error, req, res, next);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(undefined);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Unknown error occurred');
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Something went wrong!',
-        message: undefined
+        error: 'Something went wrong!'
       });
     });
 
@@ -191,11 +188,10 @@ describe('globalErrorHandler middleware', () => {
 
       globalErrorHandler(error, req, res, next);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(undefined);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Unknown error occurred');
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Something went wrong!',
-        message: undefined
+        error: 'Something went wrong!'
       });
     });
 
@@ -204,11 +200,10 @@ describe('globalErrorHandler middleware', () => {
 
       globalErrorHandler(error, req, res, next);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(undefined);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Unknown error occurred');
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Something went wrong!',
-        message: undefined
+        error: 'Something went wrong!'
       });
     });
   });

@@ -1,8 +1,8 @@
 const globalErrorHandler = (err, req, res, _next) => {
-  console.error(err ? err.stack : undefined);
+  console.error(err?.stack || 'Unknown error occurred');
   res.status(500).json({
     error: 'Something went wrong!',
-    message: err ? err.message : undefined
+    ...(err?.message && { message: err.message })
   });
 };
 
