@@ -16,7 +16,7 @@ class UsersController {
         return res.status(409).json({ error: 'User with this email already exists' });
       }
 
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 
@@ -27,7 +27,7 @@ class UsersController {
       res.json(users);
     } catch (error) {
       console.error('Error getting users:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 
@@ -41,7 +41,7 @@ class UsersController {
       res.json(user);
     } catch (error) {
       console.error('Error getting user:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 
@@ -66,7 +66,7 @@ class UsersController {
         return res.status(409).json({ error: 'Email already in use' });
       }
 
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 
@@ -81,7 +81,7 @@ class UsersController {
       res.status(204).send();
     } catch (error) {
       console.error('Error deleting user:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 }

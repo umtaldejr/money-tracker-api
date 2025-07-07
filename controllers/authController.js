@@ -40,7 +40,7 @@ class AuthController {
       });
     } catch (error) {
       console.error('Error logging in user:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 
@@ -49,7 +49,7 @@ class AuthController {
       res.json(req.user);
     } catch (error) {
       console.error('Error getting current user:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: 'Something went wrong!' });
     }
   }
 }
