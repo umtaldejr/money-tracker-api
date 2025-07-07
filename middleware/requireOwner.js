@@ -1,4 +1,4 @@
-const checkUserOwnership = (req, res, next) => {
+const requireOwner = (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -14,4 +14,4 @@ const checkUserOwnership = (req, res, next) => {
   }
 };
 
-module.exports = checkUserOwnership;
+module.exports = requireOwner;

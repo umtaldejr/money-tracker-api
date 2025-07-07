@@ -2,7 +2,7 @@ const express = require('express');
 const UsersController = require('../../controllers/usersController');
 const validateObjectId = require('../../middleware/validateObjectId');
 const authenticate = require('../../middleware/authenticate');
-const checkUserOwnership = require('../../middleware/checkUserOwnership');
+const requireOwner = require('../../middleware/requireOwner');
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ router.get('/',
 router.get('/:id',
   validateObjectId,
   authenticate,
-  checkUserOwnership,
+  requireOwner,
   UsersController.getUserById
 );
 
@@ -23,14 +23,14 @@ router.post('/', UsersController.createUser);
 router.put('/:id',
   validateObjectId,
   authenticate,
-  checkUserOwnership,
+  requireOwner,
   UsersController.updateUser
 );
 
 router.delete('/:id',
   validateObjectId,
   authenticate,
-  checkUserOwnership,
+  requireOwner,
   UsersController.deleteUser
 );
 

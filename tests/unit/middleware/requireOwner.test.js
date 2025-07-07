@@ -1,6 +1,6 @@
-const checkUserOwnership = require('../../../middleware/checkUserOwnership');
+const requireOwner = require('../../../middleware/requireOwner');
 
-describe('checkUserOwnership middleware', () => {
+describe('requireOwner middleware', () => {
   let req, res, next;
   let consoleErrorSpy;
 
@@ -28,7 +28,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = 'user-123';
       req.userId = 'user-123';
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
@@ -41,7 +41,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = 'user-456';
       req.userId = 'user-123';
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -54,7 +54,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = 'user-123';
       req.userId = undefined;
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -67,7 +67,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = undefined;
       req.userId = 'user-123';
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -80,7 +80,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = undefined;
       req.userId = undefined;
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -95,7 +95,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = '123';
       req.userId = 123;
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -108,7 +108,7 @@ describe('checkUserOwnership middleware', () => {
       req.params.id = null;
       req.userId = null;
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -126,7 +126,7 @@ describe('checkUserOwnership middleware', () => {
         }
       });
 
-      checkUserOwnership(req, res, next);
+      requireOwner(req, res, next);
 
       expect(consoleErrorSpy).toHaveBeenCalledWith('User ownership check error:', expect.any(Error));
       expect(res.status).toHaveBeenCalledWith(500);
