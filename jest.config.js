@@ -1,5 +1,6 @@
 module.exports = {
   testEnvironment: 'node',
+  setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
   collectCoverageFrom: [
     '**/*.js',
     '!node_modules/**',
@@ -8,8 +9,12 @@ module.exports = {
     '!eslint.config.js'
   ],
   testMatch: [
-    '**/__tests__/**/*.js',
+    '**/tests/**/*.js',
     '**/?(*.)+(spec|test).js'
+  ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/tests/setup.js'
   ],
   verbose: true,
   clearMocks: true,

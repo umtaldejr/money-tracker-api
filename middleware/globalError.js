@@ -1,9 +1,8 @@
-// Global error handler middleware
 const globalErrorHandler = (err, req, res, _next) => {
-  console.error(err.stack);
+  console.error(err?.stack || 'Unknown error occurred');
   res.status(500).json({
     error: 'Something went wrong!',
-    message: err.message
+    ...(err?.message && { message: err.message })
   });
 };
 

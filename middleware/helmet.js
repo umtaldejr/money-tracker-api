@@ -1,6 +1,5 @@
 const helmet = require('helmet');
 
-// Security headers middleware
 const securityHeaders = helmet({
   contentSecurityPolicy: {
     directives: {

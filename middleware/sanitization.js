@@ -1,4 +1,3 @@
-// Request sanitization middleware
 const sanitizeInput = (req, res, next) => {
   const sanitizeValue = (value) => {
     if (typeof value === 'string') {
@@ -12,17 +11,25 @@ const sanitizeInput = (req, res, next) => {
     return value;
   };
 
-  const sanitizeObject = (obj) => {
+  const sanitizeObject = (obj, visited = new WeakSet()) => {
     if (obj && typeof obj === 'object') {
+      // Check for circular references
+      if (visited.has(obj)) {
+        return;
+      }
+      visited.add(obj);
+
       for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
           if (typeof obj[key] === 'object' && obj[key] !== null) {
-            sanitizeObject(obj[key]);
+            sanitizeObject(obj[key], visited);
           } else {
             obj[key] = sanitizeValue(obj[key]);
           }
         }
       }
+
+      visited.delete(obj);
     }
   };
 

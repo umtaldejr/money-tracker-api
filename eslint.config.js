@@ -15,6 +15,7 @@ module.exports = [
       'eol-last': ['error', 'always'],
       'indent': ['error', 2],
       'linebreak-style': ['error', 'unix'],
+      'no-multiple-empty-lines': ['error', { 'max': 1, 'maxEOF': 0, 'maxBOF': 0 }],
       'no-trailing-spaces': 'error',
       'no-undef': 'error',
       'no-unused-vars': ['warn', { 'argsIgnorePattern': '^_' }],
